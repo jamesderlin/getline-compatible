@@ -8,8 +8,15 @@
 #include "getline.h"
 
 
-int
-fggets(char** line, FILE* stream)
+typedef ssize_t (*getline_func)(char** lineptr, size_t* n, FILE* stream);
+
+
+/** fggets_internal
+  *
+  *     Internal wrapper around `getline` or `getline_univ`.
+  */
+static int
+fggets_internal(char** line, FILE* stream, getline_func getline)
 {
     enum { fggets_success, fggets_failure };
 
@@ -61,6 +68,20 @@ fggets(char** line, FILE* stream)
 exit:
     free(buffer);
     return ret;
+}
+
+
+int
+fggets(char** line, FILE* stream)
+{
+    return fggets_internal(line, stream, getline);
+}
+
+
+int
+fggets_univ(char** line, FILE* stream)
+{
+    return fggets_internal(line, stream, getline_univ);
 }
 
 

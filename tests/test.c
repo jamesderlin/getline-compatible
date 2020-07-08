@@ -130,6 +130,51 @@ escape_string(const char* s)
 }
 
 
+/** alloc_strcat
+  *
+  * PARAMETERS:
+  *     IN s1, s2 : The strings to concatenate.
+  *
+  * RETURNS:
+  *     Returns the allocated concatenation of `s1` and `s2`.
+  *
+  *     Returns NULL on failure.
+  *
+  *     The caller is responsible for freeing the returned string with `free()`.
+  */
+static char*
+alloc_strcat(const char* s1, const char* s2)
+{
+    char* concatenated = NULL;
+
+    size_t len1;
+    size_t len2;
+    size_t totalSize;
+
+    assert(s1 != NULL);
+    assert(s2 != NULL);
+
+    len1 = strlen(s1);
+    len2 = strlen(s2);
+
+    if (len1 > (SIZE_MAX - 1) - len2)
+    {
+        /* Overflow. */
+        return NULL;
+    }
+
+    totalSize = len1 + len2 + 1 /* NUL */;
+
+    concatenated = malloc(totalSize);
+    if (concatenated == NULL)
+    {
+        return NULL;
+    }
+
+    sprintf(concatenated, "%s%s", s1, s2);
+    return concatenated;
+}
+
 
 static bool
 expect(bool condition, const char* expectedReason, int sourceLineNumber)
@@ -200,7 +245,8 @@ expect_str(const char* actual, const char* expected, int sourceLineNumber)
 
 static bool
 expect_getline(char** buffer, size_t* bufferSize, FILE* fp,
-               const char* expectedString, int sourceLineNumber)
+               const char* expectedString, bool universalNewlines,
+               int sourceLineNumber)
 {
     ssize_t bytesRead;
     bool success = true;
@@ -209,7 +255,9 @@ expect_getline(char** buffer, size_t* bufferSize, FILE* fp,
     assert(bufferSize != NULL);
     assert(fp != NULL);
 
-    bytesRead = getline(buffer, bufferSize, fp);
+    bytesRead = (universalNewlines
+                 ? getline_univ
+                 : getline)(buffer, bufferSize, fp);
     success &= EXPECT_LINE(bytesRead >= 0, sourceLineNumber);
     success &= EXPECT_VAL_LINE((unsigned long) bytesRead,
                                (unsigned long) strlen(expectedString),
@@ -221,11 +269,15 @@ expect_getline(char** buffer, size_t* bufferSize, FILE* fp,
 }
 
 #define EXPECT_GETLINE(line, len, fp, expectedString) \
-    expect_getline(line, len, fp, expectedString, __LINE__)
+    expect_getline(line, len, fp, expectedString, false, __LINE__)
+
+#define EXPECT_GETLINE_UNIV(line, len, fp, expectedString) \
+    expect_getline(line, len, fp, expectedString, true, __LINE__)
 
 
 static bool
-expect_fggets(FILE* fp, const char* expectedString, int sourceLineNumber)
+expect_fggets(FILE* fp, const char* expectedString, bool universalNewlines,
+              int sourceLineNumber)
 {
     bool success = true;
     int error;
@@ -233,7 +285,7 @@ expect_fggets(FILE* fp, const char* expectedString, int sourceLineNumber)
 
     assert(fp != NULL);
 
-    error = fggets(&line, fp);
+    error = (universalNewlines ? fggets_univ : fggets)(&line, fp);
     success &= EXPECT_VAL_LINE(error, 0, "%d", sourceLineNumber);
     success &= expect_str(line, expectedString, sourceLineNumber);
 
@@ -242,7 +294,10 @@ expect_fggets(FILE* fp, const char* expectedString, int sourceLineNumber)
 }
 
 #define EXPECT_FGGETS(fp, expectedString) \
-    expect_fggets(fp, expectedString, __LINE__)
+    expect_fggets(fp, expectedString, false, __LINE__)
+
+#define EXPECT_FGGETS_UNIV(fp, expectedString) \
+    expect_fggets(fp, expectedString, true, __LINE__)
 
 
 typedef struct
@@ -362,6 +417,22 @@ test_escape_string(TestContext* context)
         free(escaped);
     }
 
+    return success;
+}
+
+
+static bool
+test_alloc_strcat(TestContext* context)
+{
+    bool success = true;
+    char* concatenated = alloc_strcat("Hello", " world!");
+    if (concatenated == NULL)
+    {
+        fprintf(stderr, "Failed to allocate memory.\n");
+        return false;
+    }
+    success &= EXPECT_STR(concatenated, "Hello world!");
+    free(concatenated);
     return success;
 }
 
@@ -726,6 +797,167 @@ test_fggets_file_without_newline(TestContext* context)
 }
 
 
+static bool test_getline_univ_line_ending(TestContext* context,
+                                          const char* lineEnding)
+{
+    bool success = true;
+
+    const char* expectedStrings[] =
+    {
+        "The five boxing wizards jump quickly.",
+        "Pack my box with five dozen liquor jugs.",
+        "The quick brown fox jumps over the dog.",
+    };
+
+    size_t i;
+    for (i = 0; i < ARRAY_LENGTH(expectedStrings); i++)
+    {
+        fprintf(context->fp, "%s%s", expectedStrings[i], lineEnding);
+    }
+    fflush(context->fp);
+    rewind(context->fp);
+
+    for (i = 0; i < ARRAY_LENGTH(expectedStrings); i++)
+    {
+        char* expectedString = alloc_strcat(expectedStrings[i], "\n");
+        if (expectedString == NULL)
+        {
+            fprintf(stderr, "Failed to allocate concatenated string.\n");
+            return false;
+        }
+        success &= EXPECT_GETLINE_UNIV(&(context->line), &(context->len),
+                                       context->fp,
+                                       expectedString);
+        free(expectedString);
+    }
+
+    {
+        ssize_t bytesRead = getline_univ(&(context->line), &(context->len),
+                                         context->fp);
+        success &= EXPECT_VAL((long) bytesRead, -1L, "%ld");
+    }
+
+    return success;
+}
+
+
+static bool test_getline_univ_lf(TestContext* context)
+{
+    return test_getline_univ_line_ending(context, "\n");
+}
+
+
+static bool test_getline_univ_cr(TestContext* context)
+{
+    return test_getline_univ_line_ending(context, "\r");
+}
+
+
+static bool test_getline_univ_crlf(TestContext* context)
+{
+    return test_getline_univ_line_ending(context, "\r\n");
+}
+
+
+static bool test_getline_univ_without_newline(TestContext* context)
+{
+    bool success = true;
+    const char* expectedString = "The five boxing wizards jump quickly.";
+
+    fprintf(context->fp, "%s", expectedString);
+    fflush(context->fp);
+    rewind(context->fp);
+
+    success &= EXPECT_GETLINE_UNIV(&(context->line), &(context->len),
+                                   context->fp,
+                                   expectedString);
+
+    {
+        ssize_t bytesRead = getline_univ(&(context->line), &(context->len),
+                                         context->fp);
+        success &= EXPECT_VAL((long) bytesRead, -1L, "%ld");
+    }
+
+    return success;
+}
+
+
+static bool test_fggets_univ_line_ending(TestContext* context,
+                                         const char* lineEnding)
+{
+    bool success = true;
+    const char* expectedStrings[] =
+    {
+        "The five boxing wizards jump quickly.",
+        "Pack my box with five dozen liquor jugs.",
+        "The quick brown fox jumps over the dog.",
+    };
+
+    size_t i;
+    for (i = 0; i < ARRAY_LENGTH(expectedStrings); i++)
+    {
+        fprintf(context->fp, "%s%s", expectedStrings[i], lineEnding);
+    }
+
+    fflush(context->fp);
+    rewind(context->fp);
+
+    for (i = 0; i < ARRAY_LENGTH(expectedStrings); i++)
+    {
+        success &= EXPECT_FGGETS_UNIV(context->fp, expectedStrings[i]);
+    }
+
+    {
+        char* line = NULL;
+        int result = fggets_univ(&line, context->fp);
+        success &= EXPECT(result != 0);
+        success &= EXPECT(line == NULL);
+    }
+
+    return success;
+}
+
+
+static bool test_fggets_univ_lf(TestContext* context)
+{
+    return test_fggets_univ_line_ending(context, "\n");
+}
+
+
+static bool test_fggets_univ_cr(TestContext* context)
+{
+    return test_fggets_univ_line_ending(context, "\r");
+}
+
+
+static bool test_fggets_univ_crlf(TestContext* context)
+{
+    return test_fggets_univ_line_ending(context, "\r\n");
+}
+
+
+static bool test_fggets_univ_without_newline(TestContext* context)
+{
+    bool success = true;
+    const char* expectedString = "The five boxing wizards jump quickly.";
+
+    fprintf(context->fp, "%s", expectedString);
+    fflush(context->fp);
+    rewind(context->fp);
+
+    success &= EXPECT_FGGETS_UNIV(context->fp, expectedString);
+
+    {
+        char* line = NULL;
+        int result = fggets_univ(&line, context->fp);
+        success &= EXPECT(result != 0);
+        success &= EXPECT(line == NULL);
+    }
+
+    return success;
+}
+
+
 int
 main(void)
 {
@@ -741,6 +973,7 @@ main(void)
     } tests[] =
     {
         ADD_TEST(test_escape_string),
+        ADD_TEST(test_alloc_strcat),
 
         ADD_TEST(test_getline_empty_file),
         ADD_TEST(test_getline_single_terminated_line),
@@ -755,6 +988,15 @@ main(void)
         ADD_TEST(test_fggets_single_terminated_line),
         ADD_TEST(test_fggets_multiple_terminated_lines),
         ADD_TEST(test_fggets_file_without_newline),
+
+        ADD_TEST(test_getline_univ_lf),
+        ADD_TEST(test_getline_univ_cr),
+        ADD_TEST(test_getline_univ_crlf),
+        ADD_TEST(test_getline_univ_without_newline),
+        ADD_TEST(test_fggets_univ_lf),
+        ADD_TEST(test_fggets_univ_cr),
+        ADD_TEST(test_fggets_univ_crlf),
+        ADD_TEST(test_fggets_univ_without_newline),
     };
     #undef ADD_TEST
 

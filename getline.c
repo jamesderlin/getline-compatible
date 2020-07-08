@@ -13,7 +13,8 @@
     typedef enum { false, true } bool;
 #endif
 
-#ifndef _WITH_GETLINE
+#define ARRAY_LENGTH(a) (sizeof (a) / sizeof *(a))
+
 enum
 {
 #ifdef NDEBUG
@@ -24,16 +25,26 @@ enum
 };
 
 
-ssize_t
-getdelim(char** lineptr, size_t* n, int delimiter, FILE* stream)
+/** get_delimited_of
+  *
+  *     Like `getdelim`, but retrieves the next line from `stream` delimited by
+  *     any of the characters (each represented as an `unsigned char`) from
+  *     `delimiters`.
+  */
+static ssize_t
+get_delimited_of(char** lineptr, size_t* n,
+                 const int* delimiters, size_t numDelimiters,
+                 FILE* stream)
 {
     ssize_t ret = -1;
     char* buffer = NULL;
     size_t bufferSize;
     size_t bufferPos = 0;
 
-    if (lineptr == NULL || n == NULL)
+    if (   lineptr == NULL || n == NULL
+        || delimiters == NULL || numDelimiters == 0)
     {
+        assert(false);
         errno = EINVAL;
         goto exit;
     }
@@ -100,9 +111,15 @@ getdelim(char** lineptr, size_t* n, int delimiter, FILE* stream)
         }
 
         buffer[bufferPos++] = (char) (unsigned char) c;
-        if (c == delimiter)
+
         {
-            break;
+            size_t i;
+            for (i = 0; i < numDelimiters && delimiters[i] != c; i++) { }
+            if (i != numDelimiters)
+            {
+                /* We found a delimiter. */
+                break;
+            }
         }
     }
 
@@ -125,9 +142,53 @@ exit:
 }
 
 
+#ifndef _WITH_GETLINE
+ssize_t
+getdelim(char** lineptr, size_t* n, int delimiter, FILE* stream)
+{
+    return get_delimited_of(lineptr, n, &delimiter, 1, stream);
+}
+
+
 ssize_t
 getline(char** lineptr, size_t* n, FILE* stream)
 {
-    return getdelim(lineptr, n, '\n', stream);
+    int delimiter = '\n';
+    return get_delimited_of(lineptr, n, &delimiter, 1, stream);
 }
 #endif /* _WITH_GETLINE */
+
+
+ssize_t
+getline_univ(char** lineptr, size_t* n, FILE* stream)
+{
+    char* line;
+    int delimiters[] = { '\r', '\n' };
+    ssize_t bytesRead = get_delimited_of(lineptr, n,
+                                         delimiters, ARRAY_LENGTH(delimiters),
+                                         stream);
+    if (bytesRead <= 0)
+    {
+        return bytesRead;
+    }
+
+    line = *lineptr;
+    assert(line[bytesRead] == '\0');
+    if (line[bytesRead - 1] == '\r')
+    {
+        int next;
+
+        line[bytesRead - 1] = '\n';
+
+        next = fgetc(stream);
+        if (next == EOF)
+        {
+            clearerr(stream);
+        }
+        else if (next != '\n')
+        {
+            ungetc(next, stream);
+        }
+    }
+    return bytesRead;
+}

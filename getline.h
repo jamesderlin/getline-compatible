@@ -44,4 +44,14 @@ ssize_t getdelim(char** lineptr, size_t* n, int delimiter, FILE* stream);
 ssize_t getline(char** lineptr, size_t* n, FILE* stream);
 
 #endif /* _WITH_GETLINE */
+
+
+/** getline_univ
+  *
+  *     A version of `getline` that recognizes CR, LF, or CR-LF as line
+  *     endings, regardless of the platform and of `stream`'s mode.
+  */
+ssize_t getline_univ(char** lineptr, size_t* n, FILE* stream);
+
+
 #endif /* GETLINE_COMPATIBLE_H */

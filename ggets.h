@@ -45,4 +45,12 @@ int fggets(char** line, FILE* stream);
   */
 int ggets(char** line);
 
+
+/** fggets_univ
+  *
+  *     A version of `fggets` that recognizes CR, LF, or CR-LF as line endings,
+  *     regardless of the platform and of `stream`'s mode.
+  */
+int fggets_univ(char** line, FILE* stream);
+
 #endif /* GGETS_COMPATIBLE_H */
