@@ -1,11 +1,16 @@
 #include <assert.h>
 #include <ctype.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "getline.h"
 #include "ggets.h"
+
+#ifndef SIZE_MAX
+    #define SIZE_MAX ((size_t) -1)
+#endif
 
 #if __STDC_VERSION__ >= 199901L
     #include <stdbool.h>
@@ -14,6 +19,116 @@
 #endif
 
 #define ARRAY_LENGTH(a) (sizeof (a) / sizeof *(a))
+
+
+static const char hexDigits[] =
+{
+    '0', '1', '2', '3', '4', '5', '6', '7',
+    '8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
+};
+
+
+/** escape_string
+  *
+  * PARAMETERS:
+  *     IN s : The string to escape.
+  *
+  * RETURNS:
+  *     Returns an allocated copy of `s` with non-printable characters escaped.
+  *
+  *     Returns NULL on failure.
+  *
+  *     The caller is responsible for freeing the returned string with `free()`.
+  */
+static char*
+escape_string(const char* s)
+{
+    char* escaped = NULL;
+    char* out;
+    char c;
+    size_t n;
+
+    assert(s != NULL);
+
+    n  = strlen(s);
+
+    /* Assume the worst case where every character needs to be escaped as a
+     * hex sequence (e.g. `\xFF`).
+     */
+    if (n >= SIZE_MAX / 4)
+    {
+        return NULL;
+    }
+    escaped = malloc(n * 4 + 1 /* NUL */);
+    if (escaped == NULL)
+    {
+        return NULL;
+    }
+
+    out = escaped;
+    while ((c = *s++) != '\0')
+    {
+        switch (c)
+        {
+            case '\a':
+                *out++ = '\\';
+                *out++ = 'a';
+                break;
+            case '\b':
+                *out++ = '\\';
+                *out++ = 'b';
+                break;
+            case '\f':
+                *out++ = '\\';
+                *out++ = 'f';
+                break;
+            case '\n':
+                *out++ = '\\';
+                *out++ = 'n';
+                break;
+            case '\r':
+                *out++ = '\\';
+                *out++ = 'r';
+                break;
+            case '\t':
+                *out++ = '\\';
+                *out++ = 't';
+                break;
+            case '\v':
+                *out++ = '\\';
+                *out++ = 'v';
+                break;
+            case '\\':
+                *out++ = '\\';
+                *out++ = '\\';
+                break;
+            case '\"':
+                *out++ = '\\';
+                *out++ = '\"';
+                break;
+            default:
+            {
+                unsigned char uc = (unsigned char) c;
+                if (isprint(uc))
+                {
+                    *out++ = c;
+                }
+                else
+                {
+                    *out++ = '\\';
+                    *out++ = 'x';
+                    *out++ = hexDigits[uc >> 4];
+                    *out++ = hexDigits[uc & 0xF];
+                }
+                break;
+            }
+        }
+    }
+    *out = '\0';
+
+    return escaped;
+}
+
 
 
 static bool
@@ -56,18 +171,26 @@ expect(bool condition, const char* expectedReason, int sourceLineNumber)
 static bool
 expect_str(const char* actual, const char* expected, int sourceLineNumber)
 {
+    char* escapedActual = NULL;
+    char* escapedExpected = NULL;
     if (strcmp(actual, expected) == 0)
     {
         return true;
     }
+
+    escapedActual = escape_string(actual);
+    escapedExpected = escape_string(expected);
 
     fprintf(stderr,
             "FAIL (line: %d)\n"
             "  expected: \"%s\"\n"
             "    actual: \"%s\"\n",
             sourceLineNumber,
-            expected,
-            actual);
+            (escapedExpected != NULL) ? escapedExpected : expected,
+            (escapedActual != NULL) ? escapedActual : actual);
+
+    free(escapedActual);
+    free(escapedExpected);
     return false;
 }
 
@@ -186,6 +309,61 @@ free_test_context(TestContext* context)
 
 
 typedef bool (*TestCallback)(TestContext*);
+
+
+static bool
+test_escape_string(TestContext* context)
+{
+    bool success = true;
+    size_t i;
+
+    struct
+    {
+        const char* original;
+        const char* expected;
+    } cases[] =
+    {
+        {
+            "The five boxing wizards jump quickly.",
+            "The five boxing wizards jump quickly."
+        },
+        {
+            "The five boxing wizards jump quickly.\n",
+            "The five boxing wizards jump quickly.\\n",
+        },
+        {
+            "The five boxing wizards jump quickly.\r\n",
+            "The five boxing wizards jump quickly.\\r\\n",
+        },
+        {
+            "\\",
+            "\\\\",
+        },
+        {
+            "\"Hello!\"",
+            "\\\"Hello!\\\"",
+        },
+        {
+            "\x01\x02",
+            "\\x01\\x02",
+        },
+    };
+
+    for (i = 0; i < ARRAY_LENGTH(cases); i++)
+    {
+        char* escaped = escape_string(cases[i].original);
+        if (escaped == NULL)
+        {
+            fprintf(stderr, "Failed to allocate memory.\n");
+            return false;
+        }
+
+        success &= EXPECT_STR(escaped, cases[i].expected);
+        free(escaped);
+    }
+
+    return success;
+}
 
 
 static bool
@@ -554,22 +732,31 @@ main(void)
     bool success = true;
 
     size_t i;
-    TestCallback tests[] =
+
+    #define ADD_TEST(testCallback) { #testCallback, testCallback }
+    struct
     {
-        test_getline_empty_file,
-        test_getline_single_terminated_line,
-        test_getline_multiple_terminated_lines,
-        test_getline_file_with_long_lines,
-        test_getline_file_without_newline,
-        test_getline_writes_into_existing_buffer,
-        test_getline_grows_existing_buffer,
+        const char* description;
+        TestCallback callback;
+    } tests[] =
+    {
+        ADD_TEST(test_escape_string),
 
-        test_getdelim_binary_data,
+        ADD_TEST(test_getline_empty_file),
+        ADD_TEST(test_getline_single_terminated_line),
+        ADD_TEST(test_getline_multiple_terminated_lines),
+        ADD_TEST(test_getline_file_with_long_lines),
+        ADD_TEST(test_getline_file_without_newline),
+        ADD_TEST(test_getline_writes_into_existing_buffer),
+        ADD_TEST(test_getline_grows_existing_buffer),
 
-        test_fggets_single_terminated_line,
-        test_fggets_multiple_terminated_lines,
-        test_fggets_file_without_newline,
+        ADD_TEST(test_getdelim_binary_data),
+
+        ADD_TEST(test_fggets_single_terminated_line),
+        ADD_TEST(test_fggets_multiple_terminated_lines),
+        ADD_TEST(test_fggets_file_without_newline),
     };
+    #undef ADD_TEST
 
     for (i = 0; i < ARRAY_LENGTH(tests); i++)
     {
@@ -579,7 +766,8 @@ main(void)
             success = false;
             break;
         }
-        success &= tests[i](&context);
+        printf("%s...\n", tests[i].description);
+        success &= tests[i].callback(&context);
         free_test_context(&context);
     }
 
