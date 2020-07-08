@@ -74,7 +74,11 @@ get_delimited_of(char** lineptr, size_t* n,
         || delimiters == NULL || numDelimiters == 0)
     {
         assert(false);
+    #ifdef EINVAL
         errno = EINVAL;
+    #else
+        errno = EDOM;
+    #endif
         goto exit;
     }
 
@@ -123,7 +127,11 @@ get_delimited_of(char** lineptr, size_t* n,
             char* tempBuffer;
             if (bufferSize > (size_t) (SSIZE_MAX / 2))
             {
+            #ifdef EOVERFLOW
                 errno = EOVERFLOW;
+            #else
+                errno = ERANGE;
+            #endif
                 goto exit;
             }
 
@@ -131,7 +139,11 @@ get_delimited_of(char** lineptr, size_t* n,
             tempBuffer = realloc(buffer, newSize);
             if (tempBuffer == NULL)
             {
+            #ifdef EOVERFLOW
                 errno = ENOMEM;
+            #else
+                errno = ERANGE;
+            #endif
                 goto exit;
             }
 

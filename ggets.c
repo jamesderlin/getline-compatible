@@ -62,12 +62,14 @@ fggets_internal(char** line, FILE* stream, getline_func getline)
         {
             ret = EOF;
         }
+    #ifdef ENOMEM
         else if (errno == ENOMEM)
         {
             /* Transfer ownership of the partially-read line. */
             *line = buffer;
             buffer = NULL;
         }
+    #endif
         else
         {
             *line = NULL;

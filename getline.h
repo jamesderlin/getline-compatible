@@ -54,8 +54,14 @@
 
 /** getdelim
   *
-  * Reference:
-  *     <https://pubs.opengroup.org/onlinepubs/9699919799/functions/getline.html>
+  *     See: <https://pubs.opengroup.org/onlinepubs/9699919799/functions/getline.html>
+  *
+  * Compatibility:
+  *     If `EINVAL` is not available, sets `errno` to `EDOM` instead.
+  *
+  *     If `EOVERFLOW` is not available, sets `errno` to `ERANGE` instead.
+  *
+  *     If `ENOMEM` is not available, sets `errno` to `ERANGE` instead.
   */
 ssize_t getdelim(char** lineptr, size_t* n, int delimiter, FILE* stream);
 
