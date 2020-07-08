@@ -564,37 +564,38 @@ static bool
 test_getline_file_with_long_lines(TestContext* context)
 {
     bool success = true;
-    const size_t maxLineSize = 1 << 10;
-    size_t lineSize;
-    for (lineSize = 2; success && lineSize < maxLineSize; lineSize++)
+
+    const size_t randomStringSize = (1 << 10) + 1;
+    size_t i;
+
+    char* randomString = malloc(randomStringSize);
+    if (randomString == NULL)
+    {
+        fprintf(stderr, "Failed to allocate %lu bytes.\n",
+                (unsigned long) randomStringSize);
+        return false;
+    }
+
+    for (i = 0; i + 1 /* '\n' */ + 1 /* NUL */ < randomStringSize; i++)
+    {
+        randomString[i] = random_printable_char();
+    }
+    randomString[i++] = '\n';
+    randomString[i++] = '\0';
+    assert(i == randomStringSize);
+
+    for (i = randomStringSize - 1; success && i > 0; i--)
     {
         ssize_t bytesRead;
-        size_t i;
-        char* expectedString = NULL;
+        const char* expectedString = &randomString[i - 1];
+
         FILE* tempFile = tmpfile();
         if (tempFile == NULL)
         {
             fprintf(stderr, "Failed to create temporary file.\n");
             success = false;
-            goto loopEnd;
+            break;
         }
-
-        expectedString = malloc(lineSize);
-        if (expectedString == NULL)
-        {
-            fprintf(stderr, "Failed to allocate %lu bytes.\n",
-                    (unsigned long) lineSize);
-            success = false;
-            goto loopEnd;
-        }
-
-        for (i = 0; i + 2 < lineSize; i++)
-        {
-            expectedString[i] = random_printable_char();
-        }
-        expectedString[i++] = '\n';
-        expectedString[i] = '\0';
-        assert(i < lineSize);
 
         fprintf(tempFile, "%s", expectedString);
         fflush(tempFile);
@@ -607,13 +608,13 @@ test_getline_file_with_long_lines(TestContext* context)
         bytesRead = getline(&(context->line), &(context->len), tempFile);
         success &= EXPECT_VAL((long) bytesRead, -1L, "%ld");
 
-    loopEnd:
-        free(expectedString);
         if (tempFile != NULL)
         {
             fclose(tempFile);
         }
     }
+
+    free(randomString);
     return success;
 }
 
