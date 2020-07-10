@@ -1,7 +1,6 @@
-/** getline.h
+/** getwline.h
   *
-  * Implementations for POSIX `getdelim` and `getline` functions for non-POSIX
-  * systems.
+  * `wchar_t` implementations for `getdelim` and `getline`.
   *
   * Copyright (C) 2020 James D. Lin <jamesdlin@berkeley.edu>
   *
@@ -27,11 +26,12 @@
   * 3. This notice may not be removed or altered from any source distribution.
   */
 
-#ifndef GETLINE_COMPATIBLE_H
-#define GETLINE_COMPATIBLE_H
+#ifndef GETWLINE_COMPATIBLE_H
+#define GETWLINE_COMPATIBLE_H
 
 #include <stdio.h>
 #include <limits.h>
+#include <wchar.h>
 
 #if    defined __unix__ \
     || defined __linux__ \
@@ -46,41 +46,32 @@
     #define SSIZE_MAX INT_MAX
 #endif
 
-/* If `_WITH_GETLINE` is defined, assume that `getdelim` and `getline` are
- * available from `stdio.h` and should be used instead.
- */
-#ifndef _WITH_GETLINE
 
-
-/** getdelim
+/** getwdelim
   *
-  *     See: <https://pubs.opengroup.org/onlinepubs/9699919799/functions/getline.html>
+  *     A `wchar_t` version of `getdelim`.
   *
-  * Compatibility:
-  *     If `EINVAL` is not available, sets `errno` to `EDOM` instead.
-  *
-  *     If `EOVERFLOW` is not available, sets `errno` to `ERANGE` instead.
-  *
-  *     If `ENOMEM` is not available, sets `errno` to `ERANGE` instead.
+  *     Unlike `getdelim`, `n` represents the size of `*lineptr` in `wchar_t`s
+  *     instead of the number of the number of bytes.  Similarly, returns the
+  *     number of `wchar_t`s read instead of the number of bytes.
   */
-ssize_t getdelim(char** lineptr, size_t* n, int delimiter, FILE* stream);
+ssize_t getwdelim(wchar_t** lineptr, size_t* n, wint_t delimiter,
+                  FILE* stream);
 
 
-/** getline
+/** getwline
   *
-  *     Equivalent to `getdelim(lineptr, n, '\n', stream)`.
+  *     Equivalent to `getwdelim(lineptr, n, L'\n', stream)`.
   */
-ssize_t getline(char** lineptr, size_t* n, FILE* stream);
-
-#endif /* _WITH_GETLINE */
+ssize_t getwline(wchar_t** lineptr, size_t* n, FILE* stream);
 
 
-/** getline_univ
+/** getwline_univ
   *
-  *     A version of `getline` that recognizes CR, LF, or CR-LF as line
+  *     A version of `getwline` that recognizes CR, LF, or CR-LF as line
   *     endings, regardless of the platform and of `stream`'s mode.
   */
-ssize_t getline_univ(char** lineptr, size_t* n, FILE* stream);
+ssize_t getwline_univ(wchar_t** lineptr, size_t* n, FILE* stream);
 
 
-#endif /* GETLINE_COMPATIBLE_H */
+#endif /* GETWLINE_COMPATIBLE_H */

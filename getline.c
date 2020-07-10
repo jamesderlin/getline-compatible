@@ -27,7 +27,11 @@
   * 3. This notice may not be removed or altered from any source distribution.
   */
 
-#include "getline.h"
+#ifdef GETLINE_USE_WCHAR
+    #include "getwline.h"
+#else
+    #include "getline.h"
+#endif
 
 #include <assert.h>
 #include <errno.h>
@@ -35,6 +39,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
+#include <wctype.h>
 
 #if __STDC_VERSION__ >= 199901L
     #include <stdbool.h>
@@ -53,20 +59,47 @@ enum
 #endif /* NDEBUG */
 };
 
+#ifdef GETLINE_USE_WCHAR
+    typedef wchar_t TCHAR;
+    typedef wint_t TINT;
 
-/** get_delimited_of
+    #define T(x) L ## x
+    #define TINT wint_t
+    #define TEOF WEOF
+    #define FGETC fgetwc
+    #define UNGETC ungetwc
+    #define GETTLINE_UNIV getwline_univ
+    #define GETTDELIMOF getwdelimof
+#else
+    typedef char TCHAR;
+    typedef int TINT;
+
+    #define T(x) x
+    #define TINT int
+    #define TEOF EOF
+    #define FGETC fgetc
+    #define UNGETC ungetc
+    #define GETTLINE_UNIV getline_univ
+    #define GETTDELIMOF getdelimof
+#endif
+
+
+/** getdelimof
   *
   *     Like `getdelim`, but retrieves the next line from `stream` delimited by
   *     any of the characters (each represented as an `unsigned char`) from
   *     `delimiters`.
+  *
+  *     Returns the number of characters read, including the delimiter but not
+  *     including a `NUL`-terminator, which is always written.
   */
 static ssize_t
-get_delimited_of(char** lineptr, size_t* n,
-                 const int* delimiters, size_t numDelimiters,
-                 FILE* stream)
+GETTDELIMOF(TCHAR** lineptr, size_t* n,
+            const TINT* delimiters, size_t numDelimiters,
+            FILE* stream)
 {
     ssize_t ret = -1;
-    char* buffer = NULL;
+    TCHAR* buffer = NULL;
     size_t bufferSize;
     size_t bufferPos = 0;
 
@@ -97,7 +130,17 @@ get_delimited_of(char** lineptr, size_t* n,
             bufferSize = defaultBufferSize;
         }
 
-        buffer = malloc(bufferSize);
+        if (bufferSize > (size_t) SSIZE_MAX / sizeof *buffer)
+        {
+        #ifdef EOVERFLOW
+            errno = EOVERFLOW;
+        #else
+            errno = ERANGE;
+        #endif
+            goto exit;
+        }
+
+        buffer = malloc(bufferSize * sizeof *buffer);
         if (buffer == NULL)
         {
             errno = ENOMEM;
@@ -107,8 +150,8 @@ get_delimited_of(char** lineptr, size_t* n,
 
     while (true)
     {
-        int c = fgetc(stream);
-        if (c == EOF)
+        TINT c = FGETC(stream);
+        if (c == TEOF)
         {
             if (bufferPos == 0 || ferror(stream))
             {
@@ -124,8 +167,8 @@ get_delimited_of(char** lineptr, size_t* n,
         if (bufferPos + 1 == bufferSize)
         {
             size_t newSize;
-            char* tempBuffer;
-            if (bufferSize > (size_t) (SSIZE_MAX / 2))
+            TCHAR* tempBuffer;
+            if (bufferSize > (size_t) SSIZE_MAX / sizeof *buffer / 2)
             {
             #ifdef EOVERFLOW
                 errno = EOVERFLOW;
@@ -136,7 +179,7 @@ get_delimited_of(char** lineptr, size_t* n,
             }
 
             newSize = bufferSize * 2;
-            tempBuffer = realloc(buffer, newSize);
+            tempBuffer = realloc(buffer, newSize * sizeof *buffer);
             if (tempBuffer == NULL)
             {
             #ifdef EOVERFLOW
@@ -151,7 +194,12 @@ get_delimited_of(char** lineptr, size_t* n,
             bufferSize = newSize;
         }
 
+#ifdef WIDE_IMPL
+        /* Reference: <https://stackoverflow.com/q/10468306/> */
+        buffer[bufferPos++] = (wchar_t) c;
+#else
         buffer[bufferPos++] = (char) (unsigned char) c;
+#endif
 
         {
             size_t i;
@@ -183,11 +231,11 @@ exit:
 }
 
 
-#ifndef _WITH_GETLINE
+#if !defined _WITH_GETLINE && !defined GETLINE_USE_WCHAR
 ssize_t
 getdelim(char** lineptr, size_t* n, int delimiter, FILE* stream)
 {
-    return get_delimited_of(lineptr, n, &delimiter, 1, stream);
+    return getdelimof(lineptr, n, &delimiter, 1, stream);
 }
 
 
@@ -195,40 +243,40 @@ ssize_t
 getline(char** lineptr, size_t* n, FILE* stream)
 {
     int delimiter = '\n';
-    return get_delimited_of(lineptr, n, &delimiter, 1, stream);
+    return getdelimof(lineptr, n, &delimiter, 1, stream);
 }
-#endif /* _WITH_GETLINE */
+#endif /* !defined _WITH_GETLINE && !defined GETLINE_USE_WCHAR */
 
 
 ssize_t
-getline_univ(char** lineptr, size_t* n, FILE* stream)
+GETTLINE_UNIV(TCHAR** lineptr, size_t* n, FILE* stream)
 {
-    char* line;
-    int delimiters[] = { '\r', '\n' };
-    ssize_t bytesRead = get_delimited_of(lineptr, n,
-                                         delimiters, ARRAY_LENGTH(delimiters),
-                                         stream);
+    TCHAR* line;
+    TINT delimiters[] = { T('\r'), T('\n') };
+    ssize_t bytesRead = GETTDELIMOF(lineptr, n,
+                                    delimiters, ARRAY_LENGTH(delimiters),
+                                    stream);
     if (bytesRead <= 0)
     {
         return bytesRead;
     }
 
     line = *lineptr;
-    assert(line[bytesRead] == '\0');
-    if (line[bytesRead - 1] == '\r')
+    assert(line[bytesRead] == T('\0'));
+    if (line[bytesRead - 1] == T('\r'))
     {
         int next;
 
-        line[bytesRead - 1] = '\n';
+        line[bytesRead - 1] = T('\n');
 
-        next = fgetc(stream);
-        if (next == EOF)
+        next = FGETC(stream);
+        if (next == TEOF)
         {
             clearerr(stream);
         }
-        else if (next != '\n')
+        else if (next != T('\n'))
         {
-            ungetc(next, stream);
+            UNGETC(next, stream);
         }
     }
     return bytesRead;

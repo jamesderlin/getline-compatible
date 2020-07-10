@@ -26,6 +26,11 @@ behavior similar to universal newline support in Python.
 
 To try to maximize portability, code is written in C89.
 
+## `wchar_t` support
+
+Optionally provides `wchar_t` versions for systems that do not support UTF-8.
+Note that `wchar_t` versions require `wchar.h`, which is not available in C89.
+
 ---
 
 Questions?  Comments?  Bugs?  I welcome feedback. [Contact me].

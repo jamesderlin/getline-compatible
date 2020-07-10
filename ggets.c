@@ -24,7 +24,11 @@
   * 3. This notice may not be removed or altered from any source distribution.
   */
 
-#include "ggets.h"
+#ifdef GETLINE_USE_WCHAR
+    #include "ggetws.h"
+#else
+    #include "ggets.h"
+#endif
 
 #include <assert.h>
 #include <errno.h>
@@ -34,7 +38,21 @@
 #include "getline.h"
 
 
-typedef ssize_t (*getline_func)(char** lineptr, size_t* n, FILE* stream);
+#ifdef GETLINE_USE_WCHAR
+    typedef wchar_t TCHAR;
+
+    #define T(x) L ## x
+    #define TEOF WEOF
+    #define FGGETTS_INTERNAL fggetws_internal
+#else
+    typedef char TCHAR;
+
+    #define T(x) x
+    #define TEOF EOF
+    #define FGGETTS_INTERNAL fggets_internal
+#endif
+
+typedef ssize_t (*getline_func)(TCHAR** lineptr, size_t* n, FILE* stream);
 
 
 /** fggets_internal
@@ -42,25 +60,25 @@ typedef ssize_t (*getline_func)(char** lineptr, size_t* n, FILE* stream);
   *     Internal wrapper around `getline` or `getline_univ`.
   */
 static int
-fggets_internal(char** line, FILE* stream, getline_func getline)
+FGGETTS_INTERNAL(TCHAR** line, FILE* stream, getline_func getline)
 {
     enum { fggets_success, fggets_failure };
 
     int ret = fggets_failure;
-    char* buffer = NULL;
+    TCHAR* buffer = NULL;
     size_t bufferSize = 0;
-    ssize_t bytesRead;
+    ssize_t elementsRead;
 
     assert(line != NULL);
     assert(stream != NULL);
 
-    bytesRead = getline(&buffer, &bufferSize, stream);
+    elementsRead = getline(&buffer, &bufferSize, stream);
 
-    if (bytesRead < 0)
+    if (elementsRead < 0)
     {
         if (feof(stream))
         {
-            ret = EOF;
+            ret = TEOF;
         }
     #ifdef ENOMEM
         else if (errno == ENOMEM)
@@ -78,13 +96,14 @@ fggets_internal(char** line, FILE* stream, getline_func getline)
         goto exit;
     }
 
-    if (bytesRead > 0 && buffer[bytesRead - 1] == '\n')
+    if (elementsRead > 0 && buffer[elementsRead - 1] == T('\n'))
     {
-        bytesRead--;
-        buffer[bytesRead] = '\0';
+        elementsRead--;
+        buffer[elementsRead] = T('\0');
     }
 
-    *line = realloc(buffer, bytesRead + 1 /* NUL */);
+    /* Shrink the buffer to the minimum size necessary. */
+    *line = realloc(buffer, (elementsRead + 1 /* NUL */) * sizeof *buffer);
     if (*line == NULL)
     {
         *line = buffer;
@@ -99,6 +118,7 @@ exit:
 }
 
 
+#ifndef GETLINE_USE_WCHAR
 int
 fggets(char** line, FILE* stream)
 {
@@ -118,3 +138,4 @@ ggets(char** line)
 {
     return fggets(line, stdin);
 }
+#endif /* GETLINE_USE_WCHAR */

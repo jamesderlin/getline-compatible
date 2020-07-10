@@ -32,6 +32,7 @@
 #define GGETS_COMPATIBLE_H
 
 #include <stdio.h>
+#include <wchar.h>
 
 
 /** fggets
@@ -75,5 +76,6 @@ int ggets(char** line);
   *     regardless of the platform and of `stream`'s mode.
   */
 int fggets_univ(char** line, FILE* stream);
+
 
 #endif /* GGETS_COMPATIBLE_H */
