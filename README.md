@@ -24,7 +24,8 @@ behavior similar to universal newline support in Python.
 
 ## Portability
 
-To try to maximize portability, code is written in C89.
+To try to maximize portability, code is written in C89. (Some exotic systems
+might need to explicitly add definitions for `ssize_t` and `SIZE_MAX`.)
 
 ## `wchar_t` support
 

@@ -42,8 +42,25 @@
 #endif
 
 #ifndef SSIZE_MAX
-    typedef int ssize_t;
-    #define SSIZE_MAX INT_MAX
+    #ifndef SIZE_MAX
+        #define SIZE_MAX ((size_t) -1)
+    #endif
+
+    #if defined ULLONG_MAX && SIZE_MAX == ULLONG_MAX
+        typedef long long ssize_t;
+        #define SSIZE_MAX LLONG_MAX
+    #elif SIZE_MAX == ULONG_MAX
+        typedef long ssize_t;
+        #define SSIZE_MAX LONG_MAX
+    #elif SIZE_MAX == UINT_MAX
+        typedef int ssize_t;
+        #define SSIZE_MAX INT_MAX
+    #elif SIZE_MAX == USHORT_MAX
+        typedef short ssize_t;
+        #define SSIZE_MAX SHORT_MAX
+    #else
+        #error `ssize_t` and `SSIZE_MAX` must be defined first.
+    #endif
 #endif
 
 /* If `_WITH_GETLINE` is defined, assume that `getdelim` and `getline` are
